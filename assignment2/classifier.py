@@ -2,6 +2,7 @@ import time, random, numpy as np, argparse, sys, re, os
 from types import SimpleNamespace
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import classification_report, f1_score, recall_score, accuracy_score
@@ -29,21 +30,27 @@ class BertSentClassifier(torch.nn.Module):
         super(BertSentClassifier, self).__init__()
         self.num_labels = config.num_labels
         self.bert = BertModel.from_pretrained('bert-base-uncased')
-
+        self.output = nn.Linear(config.hidden_size, self.num_labels)
+        self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
+        '''
         # pretrain mode does not require updating bert paramters.
         for param in self.bert.parameters():
             if config.option == 'pretrain':
                 param.requires_grad = False
             elif config.option == 'finetune':
                 param.requires_grad = True
-
+        
         # todo
         raise NotImplementedError
+        '''
 
     def forward(self, input_ids, attention_mask):
         # todo
         # the final bert contextualize embedding is the hidden state of [CLS] token (the first token)
-        raise NotImplementedError
+        bert_out = self.bert(input_ids=input_ids, attention_mask=attention_mask)['pooler_output']
+        out = self.dropout(bert_out)
+        out = self.output(out)
+        return F.log_softmax(out, dim=1)
 
 # create a custom Dataset Class to be used for the dataloader
 class BertDataset(Dataset):
