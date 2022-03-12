@@ -15,12 +15,11 @@ class BertSelfAttention(nn.Module):
     self.all_head_size = self.num_attention_heads * self.attention_head_size
 
     # initialize the linear transformation layers for key, value, query
-    self.query = nn.Linear(self.all_head_size, self.all_head_size)
-    self.key = nn.Linear(self.all_head_size, self.all_head_size)
-    self.value = nn.Linear(self.all_head_size, self.all_head_size)
+    self.query = nn.Linear(config.hidden_size, self.all_head_size)
+    self.key = nn.Linear(config.hidden_size, self.all_head_size)
+    self.value = nn.Linear(config.hidden_size, self.all_head_size)
     # this attention is applied after calculating the attention score following the original implementation of transformer
     # although it is a bit unusual, we empirically observe that it yields better performance
-    self.fc_out = nn.Linear(self.all_head_size, self.all_head_size)
     self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
   def transform(self, x, linear_layer):
@@ -97,7 +96,8 @@ class BertLayer(nn.Module):
     dense_layer, dropput: the sublayer
     ln_layer: layer norm that takes input+sublayer(output)
     """
-    return dropout(ln_layer(input+dense_layer(output)))
+    out = dropout(ln_layer(input+dense_layer(output)))
+    return out
 
   def forward(self, hidden_states, attention_mask):
     """
@@ -177,7 +177,7 @@ class BertModel(BertPreTrainedModel):
     inputs_embeds = self.word_embedding(input_ids)
 
     # get position index and position embedding from self.pos_embedding
-    pos_ids = torch.arange(0, seq_length).expand(input_shape[0], seq_length)
+    pos_ids = self.position_ids[:, :seq_length]
     pos_embeds = self.pos_embedding(pos_ids)
 
     # get token type ids, since we are not consider token type, just a placeholder
