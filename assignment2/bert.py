@@ -10,17 +10,17 @@ from utils import *
 class BertSelfAttention(nn.Module):
   def __init__(self, config):
     super().__init__()
-
     self.num_attention_heads = config.num_attention_heads
     self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
     self.all_head_size = self.num_attention_heads * self.attention_head_size
 
     # initialize the linear transformation layers for key, value, query
-    self.query = nn.Linear(config.hidden_size, self.all_head_size)
-    self.key = nn.Linear(config.hidden_size, self.all_head_size)
-    self.value = nn.Linear(config.hidden_size, self.all_head_size)
+    self.query = nn.Linear(self.all_head_size, self.all_head_size)
+    self.key = nn.Linear(self.all_head_size, self.all_head_size)
+    self.value = nn.Linear(self.all_head_size, self.all_head_size)
     # this attention is applied after calculating the attention score following the original implementation of transformer
     # although it is a bit unusual, we empirically observe that it yields better performance
+    self.fc_out = nn.Linear(self.all_head_size, self.all_head_size)
     self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
   def transform(self, x, linear_layer):
@@ -42,20 +42,20 @@ class BertSelfAttention(nn.Module):
     # before normalizing the scores, use the attention mask to mask out the padding token scores
     # Note again: in the attention_mask non-padding tokens with 0 and padding tokens with a large negative number
     hidden_size = query.shape[1] * query.shape[3]
-    energy = torch.einsum("nhqd,nhkd->nhqk",[query,key])
-    if attention_mask is not None:
-      energy = energy.masked_fill(attention_mask==0, float('-1e20'))
 
-    attention = torch.softmax(energy/(hidden_size ** (1/2)),dim=3)
-    out = torch.einsum("nhql, nhld->nqhd", [attention,value]).reshape(
-            attention.shape[0], attention.shape[2], hidden_size
-    )
+    scores = torch.einsum("nhqd,nhkd->nhqk", [query,key])
+    if attention_mask is not None:
+      scores = scores + attention_mask
+    #  scores = scores.masked_fill(attention_mask==-1e4, -1e9)
+
     # normalize the scores
+    attention = torch.softmax(scores/(math.sqrt(query.shape[3])), dim=-1)
 
     # multiply the attention scores to the value and get back V'
-
+    out = torch.einsum("nhql, nhld->nqhd", [attention, value]).reshape(
+            attention.shape[0], attention.shape[2], hidden_size
+    )
     # next, we need to concat multi-heads and recover the original shape [bs, seq_len, num_attention_heads * attention_head_size = hidden_size]
-
     return out
 
   def forward(self, hidden_states, attention_mask):
@@ -144,9 +144,13 @@ class BertModel(BertPreTrainedModel):
     self.config = config
 
     # embedding
+    # self.word_embedding = (30522 x 768)
     self.word_embedding = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=config.pad_token_id)
+    # self.pos_embedding = (512 x 768)
     self.pos_embedding = nn.Embedding(config.max_position_embeddings, config.hidden_size)
+    # self.tk_type_embedding = (30522 x 768)
     self.tk_type_embedding = nn.Embedding(config.type_vocab_size, config.hidden_size)
+    # self.embed_layer_norm = 768
     self.embed_layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
     self.embed_dropout = nn.Dropout(config.hidden_dropout_prob)
     # position_ids (1, len position emb) is a constant, register to buffer
@@ -154,9 +158,11 @@ class BertModel(BertPreTrainedModel):
     self.register_buffer('position_ids', position_ids)
 
     # bert encoder
+    # self.bertLayer = 12 layers this model
     self.bert_layers = nn.ModuleList([BertLayer(config) for _ in range(config.num_hidden_layers)])
 
     # for [CLS] token
+    # self.pooler_dense =
     self.pooler_dense = nn.Linear(config.hidden_size, config.hidden_size)
     self.pooler_af = nn.Tanh()
 
@@ -170,9 +176,8 @@ class BertModel(BertPreTrainedModel):
     # todo
     inputs_embeds = self.word_embedding(input_ids)
 
-
     # get position index and position embedding from self.pos_embedding
-    pos_ids = self.position_ids[:, :seq_length]
+    pos_ids = torch.arange(0, seq_length).expand(input_shape[0], seq_length)
     pos_embeds = self.pos_embedding(pos_ids)
 
     # get token type ids, since we are not consider token type, just a placeholder
