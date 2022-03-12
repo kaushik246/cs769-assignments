@@ -10,7 +10,7 @@ from sklearn.metrics import classification_report, f1_score, recall_score, accur
 # change it with respect to the original model
 from tokenizer import BertTokenizer
 from bert import BertModel
-from optimizer import AdamW
+from torch.optim import AdamW
 from tqdm import tqdm
 
 
@@ -32,7 +32,7 @@ class BertSentClassifier(torch.nn.Module):
         self.bert = BertModel.from_pretrained('bert-base-uncased')
         self.output = nn.Linear(config.hidden_size, self.num_labels)
         self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
-        '''
+
         # pretrain mode does not require updating bert paramters.
         for param in self.bert.parameters():
             if config.option == 'pretrain':
@@ -41,8 +41,6 @@ class BertSentClassifier(torch.nn.Module):
                 param.requires_grad = True
         
         # todo
-        raise NotImplementedError
-        '''
 
     def forward(self, input_ids, attention_mask):
         # todo
@@ -166,6 +164,7 @@ def train(args):
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
     #### Load data
     # create the data and its corresponding datasets and dataloader
+    import pdb
     train_data, num_labels = create_data(args.train, 'train')
     dev_data = create_data(args.dev, 'valid')
 
