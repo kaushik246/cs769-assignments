@@ -3,7 +3,10 @@ from typing import Callable, Iterable, Tuple
 import torch
 from torch.optim import Optimizer
 import math
-
+'''
+Parts of the code was incorporated from 
+https://glaringlee.github.io/_modules/torch/optim/adamw.html
+'''
 
 class AdamW(Optimizer):
     def __init__(
@@ -56,24 +59,22 @@ class AdamW(Optimizer):
 
                 # Access hyperparameters from the `group` dictionary
                 alpha = group['lr']
-                if group['correct_bias']:  # No bias correction for Bert
-                    bias_correction1 = 1.0 - beta1 ** state['step']
-                    bias_correction2 = 1.0 - beta2 ** state['step']
-                    alpha = alpha * math.sqrt(bias_correction2) / bias_correction1
 
-                p.data.addcdiv_(exp_avg, denom, value=-alpha)
-
-                if group['weight_decay'] > 0.0:
-                    p.data.add_(p.data, alpha=-group['lr'] * group['weight_decay'])
                 # Update first and second moments of the gradients
 
                 # Bias correction
                 # Please note that we are using the "efficient version" given in
                 # https://arxiv.org/abs/1412.6980
-
+                if group['correct_bias']:
+                    bias_cor_1, bias_cor_2 = 1.0 - beta1 ** state['step'], 1.0 - beta2 ** state['step']
+                    alpha = alpha * math.sqrt(bias_cor_2) / bias_cor_1
                 # Update parameters
+
+                p.data.addcdiv_(exp_avg, denom, value=-alpha)
 
                 # Add weight decay after the main gradient-based updates.
                 # Please note that the learning rate should be incorporated into this update.
+                if group['weight_decay'] > 0.0:
+                    p.data.add_(p.data, alpha=-group['lr'] * group['weight_decay'])
 
         return loss
